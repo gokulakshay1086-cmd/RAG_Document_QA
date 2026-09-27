@@ -19,6 +19,11 @@ class Settings(BaseSettings):
 
     # Retrieval
     top_k: int = 4
+    use_hybrid_search: bool = True
+    hybrid_alpha: float = 0.5  # 1.0 = pure semantic, 0.0 = pure keyword (BM25)
+    use_reranker: bool = True
+    reranker_model: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
+    retrieval_candidate_k: int = 20  # candidates pulled before re-ranking
 
     # Storage
     vector_store_dir: str = "./data/vectorstore"

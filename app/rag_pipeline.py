@@ -19,6 +19,8 @@ from app.document_loader import load_document
 from app.text_splitter import chunk_text
 from app.embeddings import get_embedding_model
 from app.vector_store import VectorStore
+from app.hybrid_retriever import HybridRetriever
+from app.reranker import get_reranker
 from app.models import SourceChunk, QueryResponse, UploadResponse
 
 _openai_client = None
@@ -35,6 +37,7 @@ class RAGPipeline:
             dimension=self.embedder.dimension,
             persist_dir=settings.vector_store_path,
         )
+        self.retriever = HybridRetriever(self.store, alpha=settings.hybrid_alpha)
 
     # ---------------- Ingestion ----------------
 
@@ -62,7 +65,19 @@ class RAGPipeline:
     ) -> QueryResponse:
         k = top_k or settings.top_k
         query_vec = self.embedder.encode_one(question)
-        hits = self.store.search(query_vec, top_k=k, document_id=document_id)
+
+        # Pull a wider candidate pool when re-ranking will narrow it back down.
+        candidate_k = max(settings.retrieval_candidate_k, k) if settings.use_reranker else k
+
+        if settings.use_hybrid_search:
+            hits = self.retriever.search(question, query_vec, top_k=candidate_k, document_id=document_id)
+        else:
+            hits = self.store.search(query_vec, top_k=candidate_k, document_id=document_id)
+
+        if settings.use_reranker and hits:
+            hits = get_reranker().rerank(question, hits, top_k=k)
+        else:
+            hits = hits[:k]
 
         sources = [
             SourceChunk(

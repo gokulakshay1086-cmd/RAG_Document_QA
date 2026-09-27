@@ -123,7 +123,9 @@ class VectorStore:
             meta = self.metadata[idx]
             if document_id and meta["document_id"] != document_id:
                 continue
-            results.append({**meta, "score": float(score)})
+            # row_index lets callers (e.g. the hybrid retriever) line this hit
+            # back up with the same row in a parallel keyword-search index.
+            results.append({**meta, "score": float(score), "row_index": int(idx)})
             if len(results) >= top_k:
                 break
 

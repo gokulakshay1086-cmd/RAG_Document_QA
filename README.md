@@ -15,6 +15,8 @@ answering). Add an OpenAI API key to upgrade to fully synthesized LLM answers.
 - **Semantic chunking** with configurable size/overlap and paragraph-aware splitting
 - **Local embeddings** via `sentence-transformers` (no API key required)
 - **Fast vector search** via FAISS (cosine similarity)
+- **Hybrid retrieval** — combines FAISS semantic search with BM25 keyword search, so exact terms (names, dates, codes) aren't missed by pure embedding search
+- **Cross-encoder re-ranking** — a wider candidate pool is re-scored by a cross-encoder for higher precision before the final top-k is chosen
 - **Two answer generation modes**:
   - `openai` — real LLM-synthesized answers with inline citations (when `OPENAI_API_KEY` is set)
   - `extractive` — free, local fallback that returns the most relevant passage directly
@@ -33,16 +35,31 @@ flowchart LR
     B --> C[Text Splitter<br/>chunking + overlap]
     C --> D[Embedding Model<br/>sentence-transformers]
     D --> E[(FAISS Vector Store)]
+    C --> M[(BM25 Keyword Index)]
 
     F[User asks question] --> G[Embed question]
     G --> E
-    E --> H[Top-K relevant chunks]
+    F --> M
+    E --> N[Hybrid merge<br/>semantic + keyword scores]
+    M --> N
+    N --> O[Cross-Encoder Re-ranker]
+    O --> H[Final Top-K chunks]
     H --> I{OPENAI_API_KEY set?}
     I -- yes --> J[OpenAI LLM<br/>generates cited answer]
     I -- no --> K[Extractive fallback<br/>returns best passage]
     J --> L[Answer + Sources]
     K --> L
 ```
+
+**Retrieval pipeline, in words:** a question is embedded and searched against
+FAISS (semantic) *and* tokenized and searched against BM25 (keyword) in
+parallel. Both result sets are merged, their scores normalized, and blended
+(`HYBRID_ALPHA` controls the weight). That wider candidate pool is then
+re-scored by a cross-encoder, which reads the question and each chunk
+*together* rather than comparing pre-computed vectors — slower, but much
+more accurate — before the final top-k chunks are handed to the answer
+generator. Both hybrid search and re-ranking can be toggled off in `.env`
+if you want to see the difference, or to keep things faster/simpler.
 
 ## 📁 Project Structure
 
@@ -56,6 +73,8 @@ rag-document-qa/
 │   ├── text_splitter.py     # Chunking logic
 │   ├── embeddings.py        # sentence-transformers wrapper
 │   ├── vector_store.py      # FAISS index + persistence
+│   ├── hybrid_retriever.py  # BM25 + semantic score blending
+│   ├── reranker.py          # Cross-encoder re-ranking
 │   └── rag_pipeline.py      # Orchestrates ingestion & Q&A
 ├── frontend/
 │   └── streamlit_app.py     # Web UI
@@ -162,6 +181,11 @@ All configuration lives in `.env` (see `.env.example`):
 | `CHUNK_SIZE`        | `800`                | Max characters per chunk                       |
 | `CHUNK_OVERLAP`     | `120`                 | Overlap between consecutive chunks             |
 | `TOP_K`             | `4`                   | Number of chunks retrieved per question        |
+| `USE_HYBRID_SEARCH` | `true`                | Blend BM25 keyword search with semantic search |
+| `HYBRID_ALPHA`      | `0.5`                 | 1.0 = pure semantic, 0.0 = pure keyword        |
+| `USE_RERANKER`      | `true`                | Re-score candidates with a cross-encoder       |
+| `RERANKER_MODEL`    | `cross-encoder/ms-marco-MiniLM-L-6-v2` | Cross-encoder model for re-ranking |
+| `RETRIEVAL_CANDIDATE_K` | `20`              | Candidate pool size pulled before re-ranking   |
 | `VECTOR_STORE_DIR`  | `./data/vectorstore` | Where the FAISS index is persisted             |
 | `UPLOAD_DIR`        | `./data/uploads`      | Where uploaded source files are stored         |
 
@@ -179,17 +203,19 @@ and end-to-end API upload + query flows.
 These are natural next steps if you want to extend this project further:
 
 - Swap FAISS for a managed vector DB (Pinecone, Weaviate, Qdrant, pgvector)
-- Add hybrid search (BM25 keyword + semantic) for better recall
 - Add authentication and per-user document isolation
 - Stream LLM responses token-by-token to the UI
-- Add re-ranking (cross-encoder) after initial retrieval
 - Support OCR for scanned/image-based PDFs
+- Persist and incrementally update the BM25 index instead of rebuilding in-memory (matters at large document counts)
+- Add answer citation links that jump to/highlight the exact source chunk in the UI
 
 ## 🧠 How This Maps to a Resume Bullet
 
 > Built a full-stack RAG (Retrieval-Augmented Generation) document Q&A system using
-> FastAPI, FAISS, and sentence-transformers, with a Streamlit UI, Dockerized deployment,
-> automated test suite, and pluggable LLM backend (OpenAI) with a fully offline fallback mode.
+> FastAPI, FAISS, and sentence-transformers, featuring hybrid semantic + BM25 keyword
+> retrieval with cross-encoder re-ranking for improved precision, a Streamlit UI,
+> Dockerized deployment, an automated test suite, and a pluggable LLM backend (OpenAI)
+> with a fully offline fallback mode.
 
 ## 📜 License
 
