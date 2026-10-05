@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # 📄 RAG-Based AI Document Intelligence & Question Answering System
 
 A full-stack **Retrieval-Augmented Generation (RAG)** system that lets you upload documents
@@ -220,3 +221,6 @@ These are natural next steps if you want to extend this project further:
 ## 📜 License
 
 MIT — see [LICENSE](LICENSE).
+=======
+# RAG_Document_QA
+>>>>>>> 1eef5d773d62a2f08ce574f90dfc6a1fa7bbd0e9
